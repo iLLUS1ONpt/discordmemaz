@@ -253,7 +253,7 @@ body::before {
 }
 
 
-/* ~~~~		3.		TITLEBAR						~~~~ */
+/* ~~~~		3.		TITLEBAR						~~~~ 
 
 .titleBar-AC4pGV {
 	z-index: 5001;
@@ -302,7 +302,7 @@ body::before {
 .winButtonMinMax-PBQ2gm:hover {
 	color: rgb(var(--fontwhite1));
 }
-
+*/
 
 /* ~~~~		4.		GUILDLIST						~~~~ */
 
