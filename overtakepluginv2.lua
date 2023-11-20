@@ -216,7 +216,7 @@ local speedWarning = 0
         ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
         ui.pushFont(ui.Font.Main)
         ui.textColored("yuzigang 🩸", colorCombo)
-        ui.textColored("Highest score: " .. highestScore .. " pts", colorCombo)
+        ui.textColored("highest score: " .. highestScore .. " pts", colorCombo)
         ui.popFont()
         ui.pushFont(ui.Font.Title)
         ui.textColored(totalScore .. " pts", colorCombo)
