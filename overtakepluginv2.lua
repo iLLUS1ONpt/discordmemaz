@@ -26,7 +26,8 @@ end
 
 ac.onClientConnected(sendhighscore)
 
-local uiCustomPos = vec2(0, 0)
+--local uiCustomPos = vec2(0, 0) --OLD
+local uiCustomPos = nil
 local uiMoveMode = false
 local lastUiMoveKeyState = false
 local messageState = false
@@ -76,12 +77,13 @@ function script.update(dt)
         carsState[#carsState + 1] = {}
     end
 
-    if wheelsWarningTimeout > 0 then
-        wheelsWarningTimeout = wheelsWarningTimeout - dt
-    elseif player.wheelsOutside > 0 then
-        addMessage("Car is outside", -1)
-        wheelsWarningTimeout = 60
-    end
+    --if wheelsWarningTimeout > 0 then
+        --wheelsWarningTimeout = wheelsWarningTimeout - dt
+    --elseif player.wheelsOutside > 0 then
+        --addMessage("Car is outside", -1)
+        --wheelsWarningTimeout = 60
+    --end
+    
     if player.speedKmh < requiredSpeed then
         if dangerouslySlowTimer > 3 then
         if totalScore > highestScore then
@@ -210,6 +212,12 @@ local speedWarning = 0
                 ui.drawLine(ref + vec2(0, 0), ref + vec2(speed, 0), colorAccent, 4)
             end
         end
+
+        if not uiCustomPos then
+        local screen = ac.getUiState().windowSize
+        uiCustomPos = vec2(screen.x / 2 - 200, 20)
+        end
+    
         ui.beginTransparentWindow("overtakeScore", uiCustomPos, vec2(1400, 1400), true)
         ui.beginOutline()
 
