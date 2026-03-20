@@ -276,7 +276,7 @@ function script.drawUI()
 
     -- Speed warning bar
     ui.pushStyleVar(ui.StyleVar.Alpha, speedWarning)
-    ui.offsetCursorY(10)
+    ui.offsetCursorY(5)
 
     local warnText = "Keep speed above " .. requiredSpeed .. " km/h"
     local warnSize = ui.measureText(warnText)
