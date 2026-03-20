@@ -190,78 +190,112 @@ local function updateMessages(dt)
     end
 end
 local speedWarning = 0
-    function script.drawUI()
-        local uiState = ac.getUiState()
-        updateMessages(uiState.dt)
+function script.drawUI()
+    local uiState = ac.getUiState()
+    updateMessages(uiState.dt)
 
-        local speedRelative = math.saturate(math.floor(ac.getCarState(1).speedKmh) / requiredSpeed)
-        speedWarning = math.applyLag(speedWarning, speedRelative < 1 and 1 or 0, 0.5, uiState.dt)
+    -- Window size (clean and compact)
+    local windowSize = vec2(420, 160)
 
-        local colorDark = rgbm(0.4, 0.4, 0.4, 1)
-        local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
-        local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
-        local colorCombo =
-            rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
-        local function speedMeter(ref)
-            ui.drawRectFilled(ref + vec2(0, -4), ref + vec2(180, 5), colorDark, 1)
-            ui.drawLine(ref + vec2(0, -4), ref + vec2(0, 4), colorGrey, 1)
-            ui.drawLine(ref + vec2(requiredSpeed, -4), ref + vec2(requiredSpeed, 4), colorGrey, 1)
-
-            local speed = math.min(ac.getCarState(1).speedKmh, 180)
-            if speed > 1 then
-                ui.drawLine(ref + vec2(0, 0), ref + vec2(speed, 0), colorAccent, 4)
-            end
-        end
-
-        if not uiCustomPos then
-        local screen = ac.getUiState().windowSize
-        uiCustomPos = vec2(screen.x / 2 - 200, 20)
-        end
-    
-        ui.beginTransparentWindow("overtakeScore", uiCustomPos, vec2(1400, 1400), true)
-        ui.beginOutline()
-
-        ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-        ui.pushFont(ui.Font.Main)
-        ui.textColored("yuzigang 🩸", colorCombo)
-        ui.textColored("highest score: " .. highestScore .. " pts", colorCombo)
-        ui.popFont()
-        ui.pushFont(ui.Font.Title)
-        ui.textColored(totalScore .. " pts", colorCombo)
-        ui.sameLine(0, 20)
-        ui.beginRotation()
-        ui.textColored(math.ceil(comboMeter * 10) / 10 .. "x", colorCombo)
-        if comboMeter > 20 then
-            ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
-        end
-        ui.popFont()
-        ui.popStyleVar()
-
-        ui.endOutline(rgbm(0, 0, 0, 0.3))
-
-        ui.offsetCursorY(20)
-        ui.pushFont(ui.Font.Main)
-        local startPos = ui.getCursor()
-        for i = 1, #messages do
-            local m = messages[i]
-            local f = math.saturate(4 - m.currentPos) * math.saturate(8 - m.age)
-            ui.setCursor(startPos + vec2(20 * 0.5 + math.saturate(1 - m.age * 10) ^ 2 * 50, (m.currentPos - 1) * 15))
-            ui.textColored(
-                m.text,
-                m.mood == 1 and rgbm(0, 1, 0, f) or m.mood == -1 and rgbm(1, 0, 0, f) or rgbm(1, 1, 1, f)
-            )
-        end
-        ui.popFont()
-        ui.setCursor(startPos + vec2(0, 4 * 30))
-
-        ui.pushStyleVar(ui.StyleVar.Alpha, speedWarning)
-        ui.setCursorY(0)
-        ui.pushFont(ui.Font.Main)
-        ui.textColored("Keep the speed above " .. requiredSpeed .. " km/h:", colorAccent)
-        speedMeter(ui.getCursor() + vec2(-9 * 0.5, 4 * 0.2))
-
-        ui.popFont()
-        ui.popStyleVar()
-
-        ui.endTransparentWindow()
+    -- Set default centered position
+    if not uiCustomPos then
+        local screen = uiState.windowSize
+        uiCustomPos = vec2(screen.x / 2 - windowSize.x / 2, 20)
     end
+
+    -- Speed calculations
+    local speedRelative = math.saturate(math.floor(ac.getCarState(1).speedKmh) / requiredSpeed)
+    speedWarning = math.applyLag(speedWarning, speedRelative < 1 and 1 or 0, 0.5, uiState.dt)
+
+    -- Colors
+    local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
+    local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
+
+    ui.beginTransparentWindow("overtakeScore", uiCustomPos, windowSize, true)
+    ui.beginOutline()
+
+    ui.pushFont(ui.Font.Main)
+
+    -- Title
+    local title = "yuzigang 🩸"
+    local titleSize = ui.measureText(title)
+    ui.setCursorX((windowSize.x - titleSize.x) / 2)
+    ui.textColored(title, colorCombo)
+
+    -- High score
+    local hsText = "high score: " .. highestScore .. " pts"
+    local hsSize = ui.measureText(hsText)
+    ui.setCursorX((windowSize.x - hsSize.x) / 2)
+    ui.textColored(hsText, colorCombo)
+
+    ui.popFont()
+
+    -- Score + combo (centered together)
+    ui.pushFont(ui.Font.Title)
+
+    local scoreText = totalScore .. " pts"
+    local comboText = math.ceil(comboMeter * 10) / 10 .. "x"
+
+    local scoreSize = ui.measureText(scoreText)
+    local comboSize = ui.measureText(comboText)
+    local totalWidth = scoreSize.x + 20 + comboSize.x
+
+    ui.setCursorX((windowSize.x - totalWidth) / 2)
+
+    ui.textColored(scoreText, colorCombo)
+    ui.sameLine(0, 20)
+
+    ui.beginRotation()
+    ui.textColored(comboText, colorCombo)
+    if comboMeter > 20 then
+        ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
+    end
+
+    ui.popFont()
+
+    -- Messages
+    ui.offsetCursorY(10)
+    ui.pushFont(ui.Font.Main)
+
+    for i = 1, #messages do
+        local m = messages[i]
+        local textSize = ui.measureText(m.text)
+        ui.setCursorX((windowSize.x - textSize.x) / 2)
+
+        local f = math.saturate(4 - m.currentPos) * math.saturate(8 - m.age)
+
+        ui.textColored(
+            m.text,
+            m.mood == 1 and rgbm(0, 1, 0, f) or
+            m.mood == -1 and rgbm(1, 0, 0, f) or
+            rgbm(1, 1, 1, f)
+        )
+    end
+
+    ui.popFont()
+
+    -- Speed warning bar
+    ui.pushStyleVar(ui.StyleVar.Alpha, speedWarning)
+    ui.offsetCursorY(10)
+
+    local warnText = "Keep speed above " .. requiredSpeed .. " km/h"
+    local warnSize = ui.measureText(warnText)
+    ui.setCursorX((windowSize.x - warnSize.x) / 2)
+    ui.textColored(warnText, colorAccent)
+
+    -- Bar
+    local barWidth = windowSize.x - 40
+    local barPos = vec2(20, ui.getCursorY() + 5)
+
+    ui.drawRectFilled(barPos, barPos + vec2(barWidth, 6), rgbm(0.2, 0.2, 0.2, 1))
+
+    local speed = math.min(ac.getCarState(1).speedKmh, requiredSpeed * 2)
+    local fill = (speed / (requiredSpeed * 2)) * barWidth
+
+    ui.drawRectFilled(barPos, barPos + vec2(fill, 6), colorAccent)
+
+    ui.popStyleVar()
+
+    ui.endOutline(rgbm(0, 0, 0, 0.3))
+    ui.endTransparentWindow()
+end
