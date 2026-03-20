@@ -28,7 +28,7 @@ ac.onClientConnected(sendhighscore)
 
 --local uiCustomPos = vec2(0, 0) --OLD
 local uiCustomPos = nil
-local uiVisible = false
+local uiVisible = true
 local lastUiKeyState = false
 
 function script.update(dt)
