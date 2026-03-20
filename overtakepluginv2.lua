@@ -289,8 +289,8 @@ function script.drawUI()
 
     ui.drawRectFilled(barPos, barPos + vec2(barWidth, 6), rgbm(0.2, 0.2, 0.2, 1))
 
-    local speed = math.min(ac.getCarState(1).speedKmh, requiredSpeed * 2)
-    local fill = (speed / (requiredSpeed * 2)) * barWidth
+    local speed = math.min(ac.getCarState(1).speedKmh, requiredSpeed)
+    local fill = (speed / requiredSpeed) * barWidth
 
     ui.drawRectFilled(barPos, barPos + vec2(fill, 6), colorAccent)
 
