@@ -28,32 +28,43 @@ ac.onClientConnected(sendhighscore)
 
 --local uiCustomPos = vec2(0, 0) --OLD
 local uiCustomPos = nil
-local uiMoveMode = false
-local lastUiMoveKeyState = false
-local messageState = false
+local uiVisible = false
+local lastUiKeyState = false
 
 function script.update(dt)
 
-    local uiMoveKeyState = ac.isKeyDown(ac.KeyIndex.B)
-    if uiMoveKeyState and lastUiMoveKeyState ~= uiMoveKeyState then
-        uiMoveMode = not uiMoveMode
-        lastUiMoveKeyState = uiMoveKeyState
-        if messageState then
-            addMessage('UI move mode disabled', -1)
-            messageState = false
-        else
-            addMessage('UI move mode enabled', -1)
-            messageState = true
-        end
-    elseif not uiMoveKeyState then
-        lastUiMoveKeyState = false
-    end
+    --local uiMoveKeyState = ac.isKeyDown(ac.KeyIndex.B)
+    --if uiMoveKeyState and lastUiMoveKeyState ~= uiMoveKeyState then
+        --uiVisible = not uiVisible
+        --lastUiMoveKeyState = uiMoveKeyState
+        --if messageState then
+            --addMessage('UI move mode disabled', -1)
+            --messageState = false
+        --else
+            --addMessage('UI move mode enabled', -1)
+            --messageState = true
+        --end
+    --elseif not uiMoveKeyState then
+        --lastUiMoveKeyState = false
+    --end
 
-        if ui.mouseClicked(ui.MouseButton.Left) then
-        if uiMoveMode then
-            uiCustomPos = ui.mousePos()
-        end
+    local uiKeyState = ac.isKeyDown(ac.KeyIndex.B)
+        if uiKeyState and not lastUiKeyState then
+            uiVisible = not uiVisible
+
+        --if uiVisible then
+            --addMessage("HUD enabled", 1)
+        --else
+            --addMessage("HUD disabled", -1)
+        --end
     end
+    lastUiKeyState = uiKeyState
+
+        --if ui.mouseClicked(ui.MouseButton.Left) then
+        --if uiVisible then
+            --uiCustomPos = ui.mousePos()
+        --end
+    --end
     
     local player = ac.getCarState(1)
     if player.engineLifeLeft < 1 then
@@ -191,6 +202,7 @@ local function updateMessages(dt)
 end
 local speedWarning = 0
 function script.drawUI()
+    if not uiVisible then return end
     local uiState = ac.getUiState()
     updateMessages(uiState.dt)
 
