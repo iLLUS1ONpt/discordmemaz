@@ -2,7 +2,7 @@ local requiredSpeed = 50
 
 function script.prepare(dt)
     ac.debug("speed", ac.getCarState(1).speedKmh)
-    return ac.getCarState(1).speedKmh > 60
+    return ac.getCarState(1).speedKmh > 50
 end
 
 local timePassed = 0
@@ -129,8 +129,23 @@ function script.update(dt)
                 end
             end
 
-            if car.collidedWith == 0 then
+            --OLD COLLISION CHECK
+            --if car.collidedWith == 0 then
+                --state.collided = true
+
+            --NEW COLLISION CHECK
+            if player.collisionDepth > 0.08 then
                 state.collided = true
+
+            if totalScore > highestScore then
+                highestScore = math.floor(totalScore)
+                stored.playerscore:set(highestScore)
+                ac.sendChatMessage("has a new highscore of " .. totalScore .. " pts!")
+            end
+
+                totalScore = 0
+                comboMeter = 1
+            end
 
         		if totalScore > highestScore then
             		highestScore = math.floor(totalScore)
@@ -212,7 +227,7 @@ function script.drawUI()
     -- Set default centered position
     if not uiCustomPos then
         local screen = uiState.windowSize
-        uiCustomPos = vec2(screen.x / 2 - windowSize.x / 2, 20)
+        uiCustomPos = vec2(screen.x / 2 - windowSize.x / 2, 10) --was 20 before instead of 10
     end
 
     -- Speed calculations
