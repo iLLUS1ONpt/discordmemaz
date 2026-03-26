@@ -130,8 +130,8 @@ function script.update(dt)
             end
 
             --OLD COLLISION CHECK
-            --if car.collidedWith == 0 then
-                --state.collided = true
+            if car.collidedWith == 0 then
+                state.collided = true
 
             --NEW COLLISION CHECK START
             --local impactSpeed = math.abs(player.speedKmh - player.speedKmh)
