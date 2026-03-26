@@ -1,445 +1,336 @@
--- SWIM LIB -- reused functions from multiple swim scripts
+-- ============================================================
+-- Flash Race Challenge - CSP Online Lua Script
+-- Flash high beams at a car to challenge them!
+-- Turn on hazards to accept a challenge.
+-- ============================================================
 
--- memoize
-function Memoize (f)
-    local mem = {} -- memoizing table
-    setmetatable(mem, {__mode = "kv"}) -- make it weak
-    return function (x) -- new version of ’f’, with memoizing
-        local r = mem[x]
-        if r == nil then -- no previous result?
-            r = f(x) -- calls original function
-            mem[x] = r -- store result for reuse
-        end
-        return r
-    end
+-- ── State machine ────────────────────────────────────────────
+local State = {
+    IDLE        = 0,
+    CHALLENGING = 1,  -- we sent a challenge, waiting for accept
+    CHALLENGED  = 2,  -- we received a challenge, waiting for hazards
+    COUNTDOWN   = 3,
+    RACING      = 4,
+    FINISHED    = 5,
+}
+local currentState = State.IDLE
+
+-- ── Race variables ───────────────────────────────────────────
+local rivalIndex      = -1
+local rivalName       = ""
+local ownHealth       = 1.0
+local rivalHealth     = 1.0
+local raceStartTimeMs = 0
+local raceEndTimeMs   = 0
+local finishMessage   = ""
+
+-- ── Config ───────────────────────────────────────────────────
+local CFG = {
+    flashWindow       = 2500,  -- ms window to count beam toggles
+    flashThreshold    = 2,     -- toggles needed to send challenge
+    targetRange       = 60,    -- max meters to find a target car
+    targetFov         = 0.5,   -- min dot product (roughly 60° cone)
+    countdownMs       = 3000,  -- countdown before race starts
+    challengeTimeout  = 15000, -- ms before unanswered challenge expires
+    behindThreshold   = 3,     -- meters behind before losing health
+    healthLossRate    = 0.07,  -- base health/sec when behind
+    healthSyncMs      = 400,   -- how often to broadcast our health
+    finishShowMs      = 5000,  -- how long to show result before auto-reset
+}
+
+-- ── Input state ──────────────────────────────────────────────
+local prevHighBeam     = false
+local flashCount       = 0
+local flashWindowStart = 0
+local prevHazards      = false
+local lastHealthSync   = 0
+local challengeStartTime = 0
+
+-- ── Helpers ──────────────────────────────────────────────────
+local function now()
+    return ac.getSim().currentSessionTimeMs
 end
 
--- queue object
-List = {}
-function List.new ()
-  return {first = 0, last = -1}
-end
+local function findTargetCar()
+    local me     = ac.getCar(0)
+    local myPos  = me.position
+    local myLook = me.look
+    local best   = -1
+    local bestDot = CFG.targetFov
 
-function List.pushLeft(list, value)
-  local first = list.first - 1
-  list.first = first
-  list[first] = value
-end
-
-function List.pushRight(list, value)
-  local last = list.last + 1
-  list.last = last
-  list[last] = value
-end
-
-function List.popLeft(list)
-  local first = list.first
-  if first > list.last then error("list is empty") end
-  local value = list[first]
-  list[first] = nil        -- to allow garbage collection
-  list.first = first + 1
-  return value
-end
-
-function List.popRight(list)
-  local last = list.last
-  if list.first > last then error("list is empty") end
-  local value = list[last]
-  list[last] = nil         -- to allow garbage collection
-  list.last = last - 1
-  return value
-end
-
-function List.length(list)
-    return list.last - list.first + 1
-end
-
-function RainbowColor(value)
-    -- Calculate the hue value based on the numeric value
-    local hue = math.floor(value % 360)
-
-    -- Convert the hue value to RGB values
-    local function hslToRgb(h, s, l)
-        local r, g, b
-
-        if s == 0 then
-            r, g, b = l, l, l -- achromatic
-        else
-            local function hue2rgb(p, q, t)
-                if t < 0 then t = t + 1 end
-                if t > 1 then t = t - 1 end
-                if t < 1 / 6 then return p + (q - p) * 6 * t end
-                if t < 1 / 2 then return q end
-                if t < 2 / 3 then return p + (q - p) * (2 / 3 - t) * 6 end
-                return p
+    for i = 1, ac.getSim().carsCount - 1 do
+        local car = ac.getCar(i)
+        if car and car.isConnected then
+            local tocar = car.position - myPos
+            local dist  = tocar:length()
+            if dist > 1 and dist < CFG.targetRange then
+                local dot = myLook:dot(tocar / dist)
+                if dot > bestDot then
+                    bestDot = dot
+                    best    = i
+                end
             end
-
-            local q = l < 0.5 and l * (1 + s) or l + s - l * s
-            local p = 2 * l - q
-            r = hue2rgb(p, q, h + 1 / 3)
-            g = hue2rgb(p, q, h)
-            b = hue2rgb(p, q, h - 1 / 3)
-        end
-
-        return r, g, b
-    end
-
-    local r, g, b = hslToRgb(hue / 360, 1, 0.5)
-    return rgbm(r, g, b, 1)
-end
-
-function IsPlayerBetweenCars(car1, car2, player)
-
-  -- Calculate the distances
-  local distanceCar1ToPlayer = vec3.distance(car1.pos, player.pos)
-  local distanceCar2ToPlayer = vec3.distance(car2.pos, player.pos)
-  local distanceCar1ToCar2 = vec3.distance(car1.pos, car2.pos)
-
-  if distanceCar1ToCar2 > 20 then return false end
-
-  local tolerance = 0.5
-
-  if math.abs((distanceCar1ToPlayer + distanceCar2ToPlayer) - distanceCar1ToCar2) <= tolerance then
-    return true
-  else
-    return false
-  end
-end
-
---------------
--- GLOBAL VARS
-local overtakeDistance = 5 -- max distance away from player for overtake to count
-local playerDistance = 150 -- max distance from player for other players to count to the multiplier
-
--- event state
-local timePassed = 0
-local totalScore = 0
-local highestScore = 0
-local comboMeter = 1
-local nearbyPlayers = -1
-local playerMultiplier = 0
-local carsState = {}
-local totalPasses = 0
-
--- ui state
-local messageQueue = List.new()
-local drawWindow = true
-
-function AddMessage(text, mood, duration)
-    local message = { -- message object
-        text = text,
-        duration = duration, -- Display for 5 seconds
-        color = rgbm.colors.white, -- White color by default
-        alpha = 1
-    }
-
-    -- add a update function
-    message.update = function(dt)
-        message.duration = message.duration - dt
-        message.alpha = math.max(0, message.alpha - dt / message.duration)
-        if message.alpha <= 0 then
-            -- Remove the message from the queue when it's no longer visible
-            List.popLeft(messageQueue)
         end
     end
-
-    -- set color
-    if mood == 1 then
-        message.color = rgbm.colors.green -- set color to green if mood 1
-    elseif mood == -1 then
-        message.color = rgbm.colors.red -- set color to red if mood -1
-    end
-
-    List.pushRight(messageQueue, message)
+    return best
 end
 
-function AddCombo(amt)
-    if comboMeter + amt > 10 then
-        comboMeter = 10
-    else
-        comboMeter = comboMeter + amt
-    end
+local function getGapAhead()
+    -- Returns meters rival is ahead of me (positive = they're in front)
+    if rivalIndex < 0 then return 0 end
+    local me    = ac.getCar(0)
+    local rival = ac.getCar(rivalIndex)
+    if not rival then return 0 end
+    return (rival.position - me.position):dot(me.look)
 end
 
-function OnTeleportOrPits(carId)
-    AddMessage("You teleported!", -1, 8)
-    ResetPoints()
+local function resetRace()
+    currentState  = State.IDLE
+    rivalIndex    = -1
+    rivalName     = ""
+    ownHealth     = 1.0
+    rivalHealth   = 1.0
+    finishMessage = ""
 end
 
--- reset points, save highscore
-function ResetPoints()
-    if totalScore > highestScore then
-        highestScore = math.floor(totalScore)
-        ac.sendChatMessage('scored ' .. totalScore .. ' points!')
-    end
-    totalScore = 0
-    comboMeter = 1
-end
+-- ── Online Events (forward declared so closures resolve correctly) ──
+local challengeEvent, acceptEvent, startEvent, healthEvent, lostEvent
 
-function GetCarAngle(car1, car2)
-    local car1Tocar2 = (car1.pos - car2.pos):normalize()
-    -- Calculate angles
-    local car2Angle = math.acos(math.dot(car1Tocar2, car1.look)) * (180 / math.pi)
-    -- Calculate cross products
-    local crossProduct = math.cross(car1.look, car1Tocar2)
-    -- Adjust angles based on the sign of the cross product
-    if crossProduct.y < 0 then car2Angle = 360 - car2Angle end
-    return car2Angle
-end
+challengeEvent = ac.OnlineEvent({
+    targetSessionId = ac.StructItem.int32(),
+}, function(sender, data)
+    if sender == nil then return end
+    if data.targetSessionId ~= ac.getCar(0).sessionID then return end
+    if currentState ~= State.IDLE then return end
 
----@diagnostic disable-next-line: duplicate-set-field
-function script.prepare(dt)
-    ac.onCarJumped(0, OnTeleportOrPits) -- If player teleports, callback registered once
-    if dt > 0 then
-        return true
-    end
-end
+    rivalIndex         = sender.index
+    rivalName          = ac.getDriverName(sender.index)
+    currentState       = State.CHALLENGED
+    challengeStartTime = now()
+    ac.setMessage(rivalName .. " is challenging you! Turn on hazards to accept.", 6)
+end)
 
----@diagnostic disable-next-line: duplicate-set-field
+acceptEvent = ac.OnlineEvent({
+    dummy = ac.StructItem.byte(),
+}, function(sender, data)
+    if sender == nil then return end
+    if currentState ~= State.CHALLENGING then return end
+    if sender.index ~= rivalIndex then return end
+
+    -- We challenged and they accepted — we own the start time
+    raceStartTimeMs = now() + CFG.countdownMs
+    ownHealth       = 1.0
+    rivalHealth     = 1.0
+    currentState    = State.COUNTDOWN
+    startEvent{ startTimeMs = raceStartTimeMs }
+    ac.setMessage(rivalName .. " accepted! Get ready...", 3)
+end)
+
+startEvent = ac.OnlineEvent({
+    startTimeMs = ac.StructItem.int64(),
+}, function(sender, data)
+    if sender == nil then return end
+    if currentState ~= State.CHALLENGED then return end
+    if sender.index ~= rivalIndex then return end
+
+    raceStartTimeMs = data.startTimeMs
+    ownHealth       = 1.0
+    rivalHealth     = 1.0
+    currentState    = State.COUNTDOWN
+    ac.setMessage("Race starting! Get ready...", 3)
+end)
+
+healthEvent = ac.OnlineEvent({
+    health = ac.StructItem.float(),
+}, function(sender, data)
+    if sender == nil then return end
+    if sender.index ~= rivalIndex then return end
+    if currentState ~= State.RACING and currentState ~= State.FINISHED then return end
+    rivalHealth = data.health
+end)
+
+lostEvent = ac.OnlineEvent({
+    dummy = ac.StructItem.byte(),
+}, function(sender, data)
+    if sender == nil then return end
+    if currentState ~= State.RACING then return end
+    if sender.index ~= rivalIndex then return end
+
+    currentState  = State.FINISHED
+    raceEndTimeMs = now()
+    finishMessage = "You won! 🏆"
+end)
+
+-- ── Update loop ──────────────────────────────────────────────
 function script.update(dt)
-    local player = ac.getCar(0) -- Get player state
-    if player == nil then
-        return
-    end
+    local me          = ac.getCar(0)
+    local currentTime = now()
 
-	if player.isInPitlane then
-		if List.length(messageQueue) > 0 then
-        	if messageQueue[messageQueue.last].text == "Click End to hide script!" then
-            	messageQueue[messageQueue.last].duration = 5
+    -- High beam flash detection
+    local hb = me.highBeams
+    if hb ~= prevHighBeam then
+        prevHighBeam = hb
+        if currentTime - flashWindowStart > CFG.flashWindow then
+            flashCount       = 1
+            flashWindowStart = currentTime
+        else
+            flashCount = flashCount + 1
+        end
+
+        if flashCount >= CFG.flashThreshold and currentState == State.IDLE then
+            flashCount = 0
+            local target = findTargetCar()
+            if target >= 0 then
+                rivalIndex         = target
+                rivalName          = ac.getDriverName(target)
+                currentState       = State.CHALLENGING
+                challengeStartTime = currentTime
+                challengeEvent{ targetSessionId = ac.getCar(target).sessionID }
+                ac.setMessage("Challenge sent to " .. rivalName .. "!", 4)
             else
-                AddMessage("Click End to hide script!", 0, 10)
-        	end
-        else
-        	AddMessage("Click End to hide script!", 0, 10)
-    	end
-	end
-
-    local sim = ac.getSim() -- get sim state
-    timePassed = timePassed + dt -- update time
-
-    if sim.carsCount > #carsState then
-        for i = 1, sim.carsCount do
-            carsState[i] = {}
-        end
-    end
-
-    -- handle totaled car (only works if server has damaged enabled)
-    if player.engineLifeLeft < 1 then
-        ResetPoints()
-    end
-
-    -- define combo fading rate
-    local comboFadingRate = 0.05
-    if player.speedKmh < 70 then
-        comboMeter = 1
-    else
-	if comboMeter - comboFadingRate * dt < 1 then
-	    comboMeter = 1
-	else
-            comboMeter = comboMeter - comboFadingRate * dt
-        end
-    end
-
-    local angle = player.localAngularVelocity:length() / math.sqrt(3) -- calculates angle on a scale of 0 - 1
-    playerMultiplier = 0 -- is increased for each car that is a nearby player
-    nearbyPlayers = -1 -- reset nearby players
-    local nearbyCars = {} -- nearby cars
-
-    -- loop through the cars to check for overtakes, (near) collisions
-    for i = 1, sim.carsCount do -- i = 1 because lua lists start at 1
-        local car = ac.getCar(i-1) -- subtracting 1 beacuse getCar has a zero based index
-        if car == nil then
-            return
-        end
-        ---@diagnostic disable-next-line: undefined-field
-        local distance = (car.pos - player.pos):length() -- distance between car and player
-        ---@diagnostic disable-next-line: undefined-field
-        local posDir = (car.pos - player.pos):normalize() -- relative position vector (normalized)
-        local posDot = math.dot(posDir, car.look) -- dot product, where car is in relation to player
-        local state = carsState[i] -- get state of nearby car
-
-        -- nearby player score multiplier
-        if distance < playerDistance then
-            ---@diagnostic disable-next-line: param-type-mismatch
-            if string.sub(ac.getDriverName(i-1), 1, 7) ~= "Traffic" then
-		if playerMultiplier < 8 then playerMultiplier = playerMultiplier + 1 end
-		nearbyPlayers = nearbyPlayers + 1
+                ac.setMessage("No car in range to challenge.", 3)
             end
         end
-
-        if distance < 30 then
-            table.insert(nearbyCars, car)
-	end
-
-        -- only check for collisions and overtakes if car is nearby
-        if distance < 15 then
-
-            -- check direction of travel
-            local drivingAlong = math.dot(car.look, player.look) > 0.2
-
-            -- check if state exists
-            if state.maxPosDot == nil then
-                state.collided = false
-                state.overtaken = false
-                state.maxPosDot = -1
-		state.whitelined = false
-		state.cut = false
-		state.movin = false
-            end
-
-            -- check for collision with the player
-            if car.collidedWith == 0 then
-                if List.length(messageQueue) > 0 then
-                    if messageQueue[messageQueue.last].text == "Collision!" then
-                        messageQueue[messageQueue.last].duration = 5
-                    else
-                        AddMessage("Collision!", -1, 8)
-                    end
-                else
-                    AddMessage("Collision!", -1, 8)
-                end
-                ResetPoints()
-                state.collided = true
-                collectgarbage("collect")
-            end
-
-            -- check for overtakes
-            if not state.overtaken and not state.collided and drivingAlong then
-	            state.maxPosDot = math.max(state.maxPosDot, posDot)
-                if posDot < -0.2 and state.maxPosDot > 0.5 and distance < overtakeDistance then
-                    AddMessage("Overtake!", 0, 2)
-		    totalScore = totalScore + math.round(10 * comboMeter * playerMultiplier)
-		    state.overtaken = true
-                end
-            end
-
-        else
-            state.maxPosDot = -1
-            state.overtaken = false
-            state.collided = false
-	    state.whitelined = false
-	    state.cut = false
-	    state.movin = false
-        end
-
     end
 
-    for i, car1 in ipairs(nearbyCars) do
-        local state1 = carsState[car1.index + 1]
-        for j, car2 in ipairs(nearbyCars) do
-	   local state2 = carsState[car2.index + 1]
-	   if i == j then goto continue end
-	   if state1.cut or state2.cut or state1.whitelined or state2.whitelined then goto continue end
-	   if car1.index == 0 or car2.index == 0 then goto continue end
-	   if IsPlayerBetweenCars(car1, car2, player) then
-	       local car1Dot = math.dot((player.pos - car1.pos):normalize(), player.look)
-	       local car2Dot = math.dot((player.pos - car2.pos):normalize(), player.look)
-	       local car1ToCar2 = (car2.pos - car1.pos):normalize() -- Direction from car1 to car2
-	       local dotProduct = math.dot(car1ToCar2, car1.look)
-	       local aiDot = math.dot((car1.pos - car2.pos):normalize(), car1.look)
-	       local distance = (car1.pos - car2.pos):length()
-	       if car1Dot < 0.3 and car1Dot > -0.7 and car2Dot < 0.3 and car2Dot > -0.7 and distance < 6 then
-	           AddMessage('Whiteline!', 1, 4)
-		   totalScore = totalScore + math.round(100 * comboMeter * playerMultiplier)
-		   AddCombo(3)
-		   state2.whitelined = true
-	       elseif ((car1Dot > 0.5 and car2Dot < -0.5) or (car2Dot > 0.5 and car1Dot < -0.5)) and dotProduct > 0.91 and distance < 18 then
-	           AddMessage('Cut!', 1, 12)
-		   totalScore = totalScore + math.round(50 * comboMeter * playerMultiplier)
-		   state1.cut = true
-		   state2.cut = true
-		   AddCombo(1)
-	       elseif state1.movin == false and state2.movin == false and dotProduct > 0.7 then
-	           AddMessage('Movin!', 0, 4)
-		   totalScore = totalScore + math.round(10 * comboMeter * playerMultiplier)
-		   state1.movin = true
-		   state2.movin = true
-		   AddCombo(0.5)
-	       end
-           end
-	   ::continue::
-	end
+    -- Hazard press to accept
+    local hz = me.hazardLights
+    if hz and not prevHazards and currentState == State.CHALLENGED then
+        acceptEvent{ dummy = 0 }
+        ac.setMessage("Accepted! Waiting for countdown...", 3)
     end
+    prevHazards = hz
 
-    for i = messageQueue.first, messageQueue.last do
-        local message = messageQueue[i]
-        if message then
-            message.update(dt)
+    -- Challenge timeout (both sides)
+    if currentState == State.CHALLENGING or currentState == State.CHALLENGED then
+        if currentTime - challengeStartTime > CFG.challengeTimeout then
+            local msg = currentState == State.CHALLENGING
+                and "Challenge timed out — no response."
+                or  "Challenge expired."
+            resetRace()
+            ac.setMessage(msg, 4)
         end
     end
 
-    -- print debug info
-    ac.debug("overtakes", tostring(overtakes))
-    ac.debug("total passes", tostring(totalPasses))
-    ac.debug("angle", tostring(angle))
-    ac.debug("score", tostring(totalScore))
-    ac.debug("nearby players", tostring(nearbyPlayers))
-    ac.debug("combo", tostring(comboMeter))
-    ac.debug("fading combo", tostring(comboFadingRate))
-    ac.debug("draw ui", tostring(drawWindow))
+    -- Countdown → Racing
+    if currentState == State.COUNTDOWN and currentTime >= raceStartTimeMs then
+        currentState = State.RACING
+    end
 
-    collectgarbage("step")
+    -- Race logic
+    if currentState == State.RACING then
+        local gap = getGapAhead()
+        if gap > CFG.behindThreshold then
+            local scale = math.min((gap - CFG.behindThreshold) / 25, 2.0)
+            ownHealth = math.max(ownHealth - CFG.healthLossRate * scale * dt, 0)
+        end
+
+        -- Broadcast our health to rival periodically
+        if currentTime - lastHealthSync > CFG.healthSyncMs then
+            lastHealthSync = currentTime
+            healthEvent{ health = ownHealth }
+        end
+
+        -- Check if we lost
+        if ownHealth <= 0 then
+            currentState  = State.FINISHED
+            raceEndTimeMs = currentTime
+            finishMessage = "You lost."
+            lostEvent{ dummy = 0 }
+        end
+    end
+
+    -- Auto-reset after finish screen
+    if currentState == State.FINISHED then
+        if currentTime - raceEndTimeMs > CFG.finishShowMs then
+            resetRace()
+        end
+    end
 end
 
----@diagnostic disable-next-line: duplicate-set-field
+-- ── UI ────────────────────────────────────────────────────────
+local colBg  = rgbm(0.1, 0.1, 0.1, 0.75)
+local colBar = rgbm(1, 1, 1, 1)
+
+local function drawHealthBar(size, progress, rtl)
+    progress = math.clamp(progress, 0, 1)
+    colBar:setLerp(rgbm.colors.red, rgbm(0.25, 0.85, 0.25, 1), progress)
+
+    local cur = ui.getCursor()
+    ui.drawRectFilled(cur, cur + size, colBg)
+
+    local p1 = rtl and cur + vec2(size.x * (1 - progress), 0) or cur
+    local p2 = rtl and cur + size or cur + vec2(size.x * progress, size.y)
+    ui.drawRectFilled(p1, p2, colBar)
+    ui.dummy(size)
+end
+
+local function drawCentered(text, yOff)
+    local ws = ac.getUI().windowSize
+    ui.transparentWindow('flashRaceMsg',
+        vec2(ws.x / 2 - 300, ws.y / 2 + (yOff or -80)),
+        vec2(600, 70),
+    function()
+        ui.pushFont(ui.Font.Huge)
+        local sz = ui.measureText(tostring(text))
+        ui.setCursorX(ui.getCursorX() + ui.availableSpaceX() / 2 - sz.x / 2)
+        ui.text(tostring(text))
+        ui.popFont()
+    end)
+end
+
 function script.drawUI()
-    local uiState = ac.getUI()
+    local ws          = ac.getUI().windowSize
+    local currentTime = now()
 
-    -- start defining the colors
-    ---@diagnostic disable-next-line: param-type-mismatch
-    local colorRGB = RainbowColor(totalScore + math.floor(timePassed * 10 % 360))
-
-    -- start drawing the ui
-    ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400), false)
-    ui.beginOutline()
-	
-	-- check if drawWindow
-    if ui.keyboardButtonPressed(ui.KeyIndex.End) then
-        -- Toggle window visibility
-        drawWindow = not drawWindow
+    -- Countdown
+    if currentState == State.COUNTDOWN then
+        local msLeft = raceStartTimeMs - currentTime
+        drawCentered(msLeft > 0 and math.ceil(msLeft / 1000) or "GO!")
     end
 
-	if not drawWindow then
-		-- end drawing UI
-		ui.endOutline(rgbm(0, 0, 0, 0.3))
-		ui.endTransparentWindow()
-		return
-	end
+    -- Race HUD (health bars + timer)
+    if currentState == State.RACING or currentState == State.FINISHED then
+        local elapsed = (currentState == State.FINISHED and raceEndTimeMs or currentTime) - raceStartTimeMs
 
-    -- swim> title
-    ui.pushStyleVar(ui.StyleVar.Alpha, 1)
-    ui.pushFont(ui.Font.Huge)
-    ui.textColored('swim>', colorRGB)
-    ui.popFont()
-    ui.popStyleVar()
+        ui.toolWindow('flashRaceHUD', vec2(ws.x / 2 - 480, 18), vec2(960, 108), function()
+            ui.pushFont(ui.Font.Title)
 
-    -- current score, multiplier and nearby players
-    ui.pushFont(ui.Font.Huge)
-    ui.text(totalScore .. ' pts')
-    ui.text(math.round(comboMeter, 1) .. 'x')
-    ui.sameLine(0, 40)
-    ui.text(nearbyPlayers .. 'p(' .. tostring(playerMultiplier) .. 'x)')
-    ui.popFont()
+            ui.columns(3)
+            ui.text("YOU")
+            ui.nextColumn()
+            local ts  = ac.lapTimeToString(math.max(elapsed, 0))
+            local tsz = ui.measureText(ts)
+            ui.setCursorX(ui.getCursorX() + ui.availableSpaceX() / 2 - tsz.x / 2)
+            ui.text(ts)
+            ui.nextColumn()
+            ui.textAligned("RIVAL", ui.Alignment.End, vec2(-1, 0))
 
-    -- Draw messages
-    local messagePosY = 200
-    if List.length(messageQueue) > 0 then
-        while List.length(messageQueue) > 4 or messageQueue[messageQueue.first].alpha < 0 do
-            List.popLeft(messageQueue)
-        end
-    end
-    for i = messageQueue.first, messageQueue.last do
-        local message = messageQueue[i]
-        if message then
-            local color = message.color
-            color.mult = message.alpha
-            ui.textColored(message.text, color)
-            messagePosY = messagePosY + 30
+            ui.columns(2)
+            drawHealthBar(vec2(ui.availableSpaceX(), 28), ownHealth, true)
+            ui.textAligned(ac.getDriverName(0), ui.Alignment.Start, vec2(-1, 0))
+            ui.nextColumn()
+            drawHealthBar(vec2(ui.availableSpaceX(), 28), rivalHealth, false)
+            ui.textAligned(rivalName, ui.Alignment.End, vec2(-1, 0))
+
+            ui.popFont()
+        end)
+
+        if currentState == State.FINISHED and finishMessage ~= "" then
+            drawCentered(finishMessage, 60)
         end
     end
 
-    -- end drawing UI
-    ui.endOutline(rgbm(0, 0, 0, 0.3))
-    ui.endTransparentWindow()
-
+    -- Bottom hint when challenged
+    if currentState == State.CHALLENGED then
+        local timeLeft = math.max(0, CFG.challengeTimeout - (currentTime - challengeStartTime))
+        ui.transparentWindow('flashChallengeHint',
+            vec2(ws.x / 2 - 280, ws.y - 130),
+            vec2(560, 45),
+        function()
+            ui.pushFont(ui.Font.Main)
+            ui.text("⚡ " .. rivalName .. " challenges you! Hazards to accept (" .. math.ceil(timeLeft / 1000) .. "s)")
+            ui.popFont()
+        end)
+    end
 end
