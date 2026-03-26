@@ -108,7 +108,7 @@ function script.update(dt)
             -- NEW COLLISION CHECK START
             local impactStrength = player.collisionDepth or 0
                 
-            if car.collidedWith == 0 and impactStrength > 0.06 then
+            if car.collidedWith == 0 and impactStrength > 0.03 then
                 state.collided = true
             
                 if totalScore > highestScore then
