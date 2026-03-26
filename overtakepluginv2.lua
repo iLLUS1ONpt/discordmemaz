@@ -230,7 +230,7 @@ function script.drawUI()
     -- Set default centered position
     if not uiCustomPos then
         local screen = uiState.windowSize
-        uiCustomPos = vec2(screen.x / 2 - windowSize.x / 2, 10) --was 20 before instead of 10
+        uiCustomPos = vec2(screen.x / 2 - windowSize.x / 2, 20)
     end
 
     -- Speed calculations
