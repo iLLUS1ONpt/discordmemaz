@@ -133,19 +133,22 @@ function script.update(dt)
             --if car.collidedWith == 0 then
                 --state.collided = true
 
-            --NEW COLLISION CHECK
-            if player.collisionDepth > 0.08 then
+            --NEW COLLISION CHECK START
+            local impactSpeed = math.abs(player.speedKmh - car.speedKmh)
+
+            if car.collidedWith == 0 and impactSpeed > 25 then
                 state.collided = true
-
-            if totalScore > highestScore then
-                highestScore = math.floor(totalScore)
-                stored.playerscore:set(highestScore)
-                ac.sendChatMessage("has a new highscore of " .. totalScore .. " pts!")
-            end
-
+            
+                if totalScore > highestScore then
+                    highestScore = math.floor(totalScore)
+                    stored.playerscore:set(highestScore)
+                    ac.sendChatMessage("has a new highscore of " .. totalScore .. " pts!")
+                end
+            
                 totalScore = 0
                 comboMeter = 1
             end
+            --NEW COLLISION CHECK END
 
         		if totalScore > highestScore then
             		highestScore = math.floor(totalScore)
