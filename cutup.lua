@@ -281,6 +281,10 @@ end
 
 function script.drawUI()
     local ws          = ac.getUI().windowSize
+    ui.transparentWindow('flashRaceDebug', vec2(10, 10), vec2(400, 30), function()
+    ui.pushFont(ui.Font.Main)
+    ui.text("Race challenge plugin loaded!")
+    ui.popFont()
     local currentTime = now()
 
     -- Countdown
