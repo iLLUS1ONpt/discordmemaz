@@ -26,45 +26,17 @@ end
 
 ac.onClientConnected(sendhighscore)
 
---local uiCustomPos = vec2(0, 0) --OLD
 local uiVisible = true
 local uiCustomPos = nil
 local lastUiKeyState = false
 
 function script.update(dt)
 
-    --local uiMoveKeyState = ac.isKeyDown(ac.KeyIndex.B)
-    --if uiMoveKeyState and lastUiMoveKeyState ~= uiMoveKeyState then
-        --uiVisible = not uiVisible
-        --lastUiMoveKeyState = uiMoveKeyState
-        --if messageState then
-            --addMessage('UI move mode disabled', -1)
-            --messageState = false
-        --else
-            --addMessage('UI move mode enabled', -1)
-            --messageState = true
-        --end
-    --elseif not uiMoveKeyState then
-        --lastUiMoveKeyState = false
-    --end
-
     local uiKeyState = ac.isKeyDown(ac.KeyIndex.B)
         if uiKeyState and not lastUiKeyState then
             uiVisible = not uiVisible
-
-        --if uiVisible then
-            --addMessage("HUD enabled", 1)
-        --else
-            --addMessage("HUD disabled", -1)
-        --end
     end
     lastUiKeyState = uiKeyState
-
-        --if ui.mouseClicked(ui.MouseButton.Left) then
-        --if uiVisible then
-            --uiCustomPos = ui.mousePos()
-        --end
-    --end
     
     local player = ac.getCarState(1)
     if player.engineLifeLeft < 1 then
@@ -129,26 +101,26 @@ function script.update(dt)
                 end
             end
 
-            --OLD COLLISION CHECK
-            if car.collidedWith == 0 then
-                state.collided = true
-
-            --NEW COLLISION CHECK START
-            --local impactSpeed = math.abs(player.speedKmh - player.speedKmh)
-
-            --if car.collidedWith == 0 and impactSpeed > 25 then
+            -- OLD COLLISION CHECK
+            --if car.collidedWith == 0 then
                 --state.collided = true
+
+            -- NEW COLLISION CHECK
+            local impactSpeed = math.abs(player.speedKmh - car.speedKmh)
+
+            if car.collidedWith == 0 and impactSpeed > 25 then
+                state.collided = true
             
-                --if totalScore > highestScore then
-                    --highestScore = math.floor(totalScore)
-                    --stored.playerscore:set(highestScore)
-                    --ac.sendChatMessage("has a new highscore of " .. totalScore .. " pts!")
-                --end
+                if totalScore > highestScore then
+                    highestScore = math.floor(totalScore)
+                    stored.playerscore:set(highestScore)
+                    ac.sendChatMessage("has a new highscore of " .. totalScore .. " pts!")
+                end
             
-                --totalScore = 0
-                --comboMeter = 1
-            --end
-            --NEW COLLISION CHECK END
+                totalScore = 0
+                comboMeter = 1
+            end
+            -- NEW COLLISION CHECK
 
         		if totalScore > highestScore then
             		highestScore = math.floor(totalScore)
