@@ -168,15 +168,14 @@ function script.update(dt)
 
     -- High beam flash detection
     local hb = me.highBeams
-    if hb ~= prevHighBeam then
-        prevHighBeam = hb
+    if hb and not prevHighBeam then  -- only count OFF → ON transitions
         if currentTime - flashWindowStart > CFG.flashWindow then
-            flashCount       = 1
+            flashCount = 1
             flashWindowStart = currentTime
         else
             flashCount = flashCount + 1
         end
-
+    
         if flashCount >= CFG.flashThreshold and currentState == State.IDLE then
             flashCount = 0
             local target = findTargetCar()
@@ -192,6 +191,7 @@ function script.update(dt)
             end
         end
     end
+    prevHighBeam = hb
 
     -- Hazard press to accept
     local hz = me.hazardLights
